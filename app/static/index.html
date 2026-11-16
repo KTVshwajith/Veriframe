@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VeriFrame — image integrity check</title>
+<style>
+  :root { --ink:#1b1f24; --muted:#5d6670; --line:#d9dee3; --ok:#1f7a4d; --warn:#b26a00; --bad:#b3261e; --bg:#f6f7f8; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:16px/1.5 system-ui, -apple-system, Segoe UI, sans-serif; color:var(--ink); background:var(--bg); }
+  main { max-width: 860px; margin: 0 auto; padding: 32px 20px 60px; }
+  h1 { margin:0 0 4px; font-size: 28px; }
+  p.lead { margin:0 0 28px; color: var(--muted); }
+  .grid { display:grid; grid-template-columns: 1fr 1fr; gap:16px; }
+  @media (max-width: 680px) { .grid { grid-template-columns: 1fr; } }
+  section { background:#fff; border:1px solid var(--line); border-radius:10px; padding:18px; }
+  h2 { font-size:17px; margin:0 0 10px; }
+  label { display:block; font-size:14px; color:var(--muted); margin:8px 0 4px; }
+  input[type=text] { width:100%; padding:8px; border:1px solid var(--line); border-radius:6px; }
+  button { margin-top:12px; padding:9px 16px; border:0; border-radius:6px; background:var(--ink); color:#fff; font-weight:600; cursor:pointer; }
+  #out { margin-top:16px; }
+  .verdict { font-weight:700; font-size:18px; }
+  .authentic, .authentic_reencoded, .registered, .already_registered { color: var(--ok); }
+  .tampered { color: var(--bad); }
+  .unknown { color: var(--warn); }
+  .preview { position:relative; display:inline-block; margin-top:12px; max-width:100%; }
+  .preview img { display:block; max-width:100%; max-height:360px; }
+  .overlay { position:absolute; inset:0; display:grid; grid-template-columns:repeat(4,1fr); grid-template-rows:repeat(4,1fr); }
+  .overlay div.hit { background: rgba(179,38,30,.35); outline: 2px solid var(--bad); }
+  pre { background:#f0f2f4; padding:10px; border-radius:6px; overflow:auto; font-size:12px; }
+  footer { margin-top:28px; font-size:13px; color:var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <h1>VeriFrame</h1>
+  <p class="lead">Register an original image, then check any later copy: identical, re-saved, tampered (with the changed regions highlighted), or unknown.</p>
+
+  <div class="grid">
+    <section>
+      <h2>1 · Register an original</h2>
+      <form id="reg">
+        <input type="file" name="file" accept="image/*" required>
+        <label for="label">Label (optional)</label>
+        <input type="text" id="label" name="label" placeholder="e.g. Site photo 14 Nov">
+        <button>Register</button>
+      </form>
+    </section>
+    <section>
+      <h2>2 · Verify a copy</h2>
+      <form id="ver">
+        <input type="file" name="file" accept="image/*" required>
+        <button>Verify</button>
+      </form>
+    </section>
+  </div>
+
+  <section id="out" hidden></section>
+
+  <footer>API docs at <a href="/docs">/docs</a> · ledger check at <a href="/api/v1/ledger/verify">/api/v1/ledger/verify</a> · metrics at <a href="/metrics/">/metrics</a></footer>
+</main>
+<script>
+const out = document.getElementById('out');
+function show(html) { out.hidden = false; out.innerHTML = html; }
+function esc(s) { return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+async function send(form, url) {
+  const fd = new FormData(form);
+  const res = await fetch(url, { method: 'POST', body: fd });
+  const body = await res.json();
+  if (!res.ok) throw new Error(body.detail || res.statusText);
+  return [body, fd.get('file')];
+}
+
+document.getElementById('reg').addEventListener('submit', async e => {
+  e.preventDefault();
+  try {
+    const [b] = await send(e.target, '/api/v1/images/register');
+    const c = b.certificate;
+    show(`<div class="verdict ${b.status}">${b.status === 'registered' ? 'Registered' : 'Already registered'}</div>
+      <p>Certificate <code>${esc(c.cert_id)}</code> · ledger entry #${c.index}</p>
+      <pre>${esc(JSON.stringify(c, null, 2))}</pre>`);
+  } catch (err) { show(`<div class="verdict tampered">Error</div><p>${esc(err.message)}</p>`); }
+});
+
+document.getElementById('ver').addEventListener('submit', async e => {
+  e.preventDefault();
+  try {
+    const [b, file] = await send(e.target, '/api/v1/images/verify');
+    const url = URL.createObjectURL(file);
+    const cells = Array.from({length:16}, (_, i) =>
+      b.changed_regions.some(r => r.row * 4 + r.col === i) ? '<div class="hit"></div>' : '<div></div>').join('');
+    const names = { authentic:'Authentic', authentic_reencoded:'Authentic (re-encoded)', tampered:'Tampered', unknown:'Unknown image' };
+    show(`<div class="verdict ${b.verdict}">${names[b.verdict]}</div><p>${esc(b.detail)}</p>
+      <div class="preview"><img src="${url}" alt="Uploaded image"><div class="overlay">${cells}</div></div>
+      ${b.certificate ? `<p>Matched certificate <code>${esc(b.certificate.cert_id)}</code></p>` : ''}`);
+  } catch (err) { show(`<div class="verdict tampered">Error</div><p>${esc(err.message)}</p>`); }
+});
+</script>
+</body>
+</html>

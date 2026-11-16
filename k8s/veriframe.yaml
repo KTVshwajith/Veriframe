@@ -1,0 +1,98 @@
+# Run locally on a kind/minikube cluster:
+#   kind create cluster --name veriframe
+#   docker build -t veriframe:local . && kind load docker-image veriframe:local --name veriframe
+#   kubectl apply -f k8s/veriframe.yaml
+#   kubectl -n veriframe port-forward svc/veriframe 8000:80   -> http://localhost:8000
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: veriframe
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: veriframe-config
+  namespace: veriframe
+data:
+  STORAGE_BACKEND: sqlite
+  SQLITE_PATH: /data/veriframe.db
+  MAX_UPLOAD_MB: "10"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: veriframe-data
+  namespace: veriframe
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: veriframe
+  namespace: veriframe
+  labels: { app: veriframe }
+spec:
+  # SQLite on a single volume => one replica. Switch STORAGE_BACKEND to dynamodb to scale out.
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app: veriframe }
+  template:
+    metadata:
+      labels: { app: veriframe }
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: /metrics/
+        prometheus.io/port: "8000"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        fsGroup: 10001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: api
+          image: veriframe:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - configMapRef: { name: veriframe-config }
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+          readinessProbe:
+            httpGet: { path: /health, port: 8000 }
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /health, port: 8000 }
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: data, mountPath: /data }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: data
+          persistentVolumeClaim: { claimName: veriframe-data }
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: veriframe
+  namespace: veriframe
+spec:
+  selector: { app: veriframe }
+  ports:
+    - port: 80
+      targetPort: 8000

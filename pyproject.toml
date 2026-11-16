@@ -1,0 +1,21 @@
+[project]
+name = "veriframe"
+version = "0.1.0"
+description = "Image integrity and tamper-detection service on a hash-chained ledger"
+requires-python = ">=3.12"
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S"]
+# B008: FastAPI's File()/Form() defaults are idiomatic. S101: asserts are fine in tests.
+ignore = ["B008"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101", "S311"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
