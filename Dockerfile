@@ -1,12 +1,12 @@
 # ---- build stage: compile wheels so the runtime image needs no build tools ----
-FROM python:3.13-slim AS build
+FROM python:3.15-slim AS build
 WORKDIR /build
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip \
  && pip wheel --no-cache-dir --wheel-dir /wheels -r requirements.txt
 
 # ---- runtime stage ----
-FROM python:3.13-slim
+FROM python:3.15-slim
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     SQLITE_PATH=/data/veriframe.db
