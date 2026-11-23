@@ -1,6 +1,6 @@
 fastapi==0.163.1
 uvicorn[standard]==0.54.0
-python-multipart==0.0.32
+python-multipart==0.0.34
 pillow==13.0.0
 ImageHash==4.3.2
 boto3==1.44.3
